@@ -1,0 +1,201 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+enum Role { FISIOTERAPEUTA_GENERALISTA FISIOTERAPEUTA_ESPECIALISTA PACIENTE CUIDADOR GESTOR_CLINICA }
+enum Especialidade { MUSCULO_ESQUELETICA ESPORTIVA RESPIRATORIA_UTI NEURO_FUNCIONAL GERONTOLOGIA PELVICA DERMATOFUNCIONAL OUTROS }
+enum StatusPaciente { TRIAGEM EM_TRATAMENTO ALTA FALTOSO ARQUIVADO }
+
+model Usuario {
+  id               String          @id @default(uuid())
+  nome             String
+  email            String          @unique
+  senhaHash        String
+  role             Role
+  crefito          String?
+  especialidades   Especialidade[]
+  ativo            Boolean         @default(true)
+  trocarSenha      Boolean         @default(false)
+  tentativasFalhas Int             @default(0)
+  bloqueadoAte     DateTime?
+  createdAt        DateTime        @default(now())
+  pacientes        Paciente[]      @relation("FisioPaciente")
+  cuidadorDe       Paciente[]      @relation("CuidadorPaciente")
+  contaPaciente    Paciente?       @relation("ContaPaciente")
+  evolucoes        AvaliacaoSOAP[] @relation("AutorSOAP")
+  auditorias       AuditLog[]
+}
+
+model Paciente {
+  id               String             @id @default(uuid())
+  nome             String
+  nascimento       DateTime?
+  telefone         String?
+  convenio         String?
+  queixa           String?
+  codigoCif        String?
+  especialidade    Especialidade?
+  status           StatusPaciente     @default(TRIAGEM)
+  consentimentoEm  DateTime?
+  historicoClinico String?
+  usuarioId        String?            @unique
+  usuario          Usuario?           @relation("ContaPaciente", fields: [usuarioId], references: [id])
+  fisioterapeutaId String
+  fisioterapeuta   Usuario            @relation("FisioPaciente", fields: [fisioterapeutaId], references: [id])
+  cuidadorId       String?
+  cuidador         Usuario?           @relation("CuidadorPaciente", fields: [cuidadorId], references: [id])
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  avaliacoesSOAP   AvaliacaoSOAP[]
+  rotinas          RotinaExercicios[]
+  biometrias       DadosBiometricos[]
+  caso             CasoClinico?
+  eventos          EventoClinico[]
+  exames           ExameValor[]
+  dias             DiaParametros[]
+  consultores      ConsultorAcesso[]
+  teleconsultas    Teleconsulta[]
+  @@index([fisioterapeutaId])
+}
+
+model AvaliacaoSOAP {
+  id            String   @id @default(uuid())
+  pacienteId    String
+  paciente      Paciente @relation(fields: [pacienteId], references: [id])
+  autorId       String
+  autor         Usuario  @relation("AutorSOAP", fields: [autorId], references: [id])
+  subjetivo     String
+  objetivo      Json
+  avaliacaoCif  String
+  planoConduta  String
+  dataAvaliacao DateTime @default(now())
+  @@index([pacienteId])
+}
+
+model DadosBiometricos {
+  id                 String   @id @default(uuid())
+  pacienteId         String
+  paciente           Paciente @relation(fields: [pacienteId], references: [id])
+  timestamp          DateTime @default(now())
+  frequenciaCardiaca Int?
+  spO2               Float?
+  hrv                Float?
+  pimax              Float?
+  pemax              Float?
+  acwrRatio          Float?
+  fonte              String
+  @@index([pacienteId, timestamp])
+}
+
+model RotinaExercicios {
+  id                String   @id @default(uuid())
+  pacienteId        String
+  paciente          Paciente @relation(fields: [pacienteId], references: [id])
+  titulo            String
+  exercicios        Json
+  frequenciaSemanal Int
+  ativa             Boolean  @default(true)
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  usuarioId  String?
+  usuario    Usuario? @relation(fields: [usuarioId], references: [id])
+  acao       String
+  entidade   String
+  entidadeId String?
+  ip         String?
+  detalhe    Json?
+  createdAt  DateTime @default(now())
+  @@index([entidade, entidadeId])
+  @@index([createdAt])
+}
+
+model CasoClinico {
+  id                    String   @id @default(uuid())
+  pacienteId            String   @unique
+  paciente              Paciente @relation(fields: [pacienteId], references: [id])
+  historia              String
+  funcionalidadeInicial Int      @default(0)
+  objetivo              String?
+  protocolo             String?
+  condicao              String?
+  inicio                DateTime
+  updatedAt             DateTime @updatedAt
+}
+
+model EventoClinico {
+  id         String   @id @default(uuid())
+  pacienteId String
+  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+  data       DateTime
+  tipo       String   // INTERVENCAO | CONTROLE | EXAME | MARCO
+  titulo     String
+  funcao     Int?
+  planejado  Boolean  @default(false)
+  autorId    String?
+  createdAt  DateTime @default(now())
+  @@index([pacienteId, data])
+}
+
+model ExameValor {
+  id         String   @id @default(uuid())
+  pacienteId String
+  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+  parametro  String
+  valor      Float
+  unidade    String?
+  data       DateTime
+  refMin     Float?
+  refMax     Float?
+  alterado   Boolean  @default(false)
+  origem     String   @default("manual") // manual | extracao
+  @@index([pacienteId, parametro, data])
+}
+
+model DiaParametros {
+  id            String   @id @default(uuid())
+  pacienteId    String
+  paciente      Paciente @relation(fields: [pacienteId], references: [id])
+  data          DateTime @db.Date
+  aguaMl        Int?
+  diureseMl     Int?
+  suorMl        Int?
+  evacuacoes    Int?
+  atividadeMin  Int?
+  atividadeTipo String?
+  rpe           Int?
+  pesoKg        Float?
+  alturaCm      Float?
+  cinturaCm     Float?
+  quadrilCm     Float?
+  paSist        Int?
+  paDiast       Int?
+  fcBpm         Int?
+  spo2          Float?
+  fonte         String   @default("manual")
+  @@unique([pacienteId, data])
+}
+
+model ConsultorAcesso {
+  id          String    @id @default(uuid())
+  pacienteId  String
+  paciente    Paciente  @relation(fields: [pacienteId], references: [id])
+  criadoPorId String
+  tokenHash   String    @unique
+  expiraEm    DateTime
+  revogadoEm  DateTime?
+  acessos     Int       @default(0)
+  createdAt   DateTime  @default(now())
+}
+
+model Teleconsulta {
+  id          String   @id @default(uuid())
+  pacienteId  String
+  paciente    Paciente @relation(fields: [pacienteId], references: [id])
+  criadoPorId String
+  codigoHash  String   @unique
+  canal       String
+  convidado   String?
+  expiraEm    DateTime
+  createdAt   DateTime @default(now())
+}
